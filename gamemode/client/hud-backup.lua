@@ -221,7 +221,10 @@ local function DrawHUD()
 	RelativeX, RelativeY = 0, Scrh
 
 	--Background
+	draw.RoundedBox(6, 0, Scrh - HUDHeight, HUDWidth, HUDHeight, ConVars.background)
 
+	DrawHealth()
+	DrawInfo()
 	GunLicense()
 	Agenda()
 	JobHelp()

@@ -59,7 +59,7 @@ end
 usermessage.Hook("_Notify", DisplayNotify)
 
 local function LoadModules()
-	local root = GAMEMODE.FolderName.."/gamemode/modules/"
+	local root = GM.FolderName.."/gamemode/modules/"
 
 	local _, folders = file.Find(root.."*", "LUA")
 
@@ -88,7 +88,6 @@ include("client/helpvgui.lua")
 include("client/hud.lua")
 include("client/showteamtabs.lua")
 include("client/vgui.lua")
-include("client/darkrppublichud.lua")
 
 include("shared/animations.lua")
 include("shared/commands.lua")
@@ -106,6 +105,8 @@ include("fpp/client/FPP_Menu.lua")
 include("fpp/client/FPP_HUD.lua")
 include("fpp/client/FPP_Buddies.lua")
 include("fpp/sh_CPPI.lua")
+
+LoadModules()
 
 surface.CreateFont("AckBarWriting", {
 	size = 20,
@@ -184,6 +185,7 @@ local function ToggleHelp()
 	HelpToggled = not HelpToggled
 
 	HelpVGUI.HelpX = HelpVGUI.StartHelpX
+	HelpVGUI:FillHelpInfo()
 	HelpVGUI:SetVisible(HelpToggled)
 	gui.EnableScreenClicker(HelpToggled)
 end
@@ -382,18 +384,16 @@ function GM:ChatTextChanged(text)
 		HearMode = "group chat"
 		local t = LocalPlayer():Team()
 		playercolors = {}
-		if t == TEAM_POLICE or t == TEAM_CHIEF or t == TEAM_MAYOR then
-			for k, v in pairs(player.GetAll()) do
-				if v ~= LocalPlayer() then
-					local vt = v:Team()
-					if vt == TEAM_POLICE or vt == TEAM_CHIEF or vt == TEAM_MAYOR then table.insert(playercolors, v) end
-				end
-			end
-		elseif t == TEAM_MOB or t == TEAM_GANG then
-			for k, v in pairs(player.GetAll()) do
-				if v ~= LocalPlayer() then
-					local vt = v:Team()
-					if vt == TEAM_MOB or vt == TEAM_GANG then table.insert(playercolors, v) end
+
+		local hasReceived = {}
+		for _, func in pairs(GAMEMODE.DarkRPGroupChats) do
+			-- not the group of the player
+			if not func(LocalPlayer()) then continue end
+
+			for _, target in pairs(player.GetAll()) do
+				if func(target) and target ~= LocalPlayer() and not hasReceived[target] then
+					hasReceived[target] = true
+					table.insert(playercolors, target)
 				end
 			end
 		end
@@ -553,13 +553,20 @@ local function UpdateDoorData(um)
 end
 usermessage.Hook("DRP_UpdateDoorData", UpdateDoorData)
 
-local function RetrievePlayerVar(um)
-	local ply = um:ReadEntity()
-	if not IsValid(ply) then return end
+local function RetrievePlayerVar(entIndex, var, value, tries)
+	local ply = Entity(entIndex)
+
+	-- Usermessages _can_ arrive before the player is valid.
+	-- In this case, chances are huge that this player will become valid.
+	if not IsValid(ply) then
+		if tries >= 5 then return end
+
+		timer.Simple(0.5, function() RetrievePlayerVar(entIndex, var, value, tries + 1) end)
+		return
+	end
 
 	ply.DarkRPVars = ply.DarkRPVars or {}
 
-	local var, value = um:ReadString(), um:ReadString()
 	local stringvalue = value
 	value = tonumber(value) or value
 
@@ -579,7 +586,17 @@ local function RetrievePlayerVar(um)
 	hook.Call("DarkRPVarChanged", nil, ply, var, ply.DarkRPVars[var], value)
 	ply.DarkRPVars[var] = value
 end
-usermessage.Hook("DarkRP_PlayerVar", RetrievePlayerVar)
+
+/*---------------------------------------------------------------------------
+Retrieve a player var.
+Read the usermessage and attempt to set the DarkRP var
+---------------------------------------------------------------------------*/
+local function doRetrieve(um)
+	local entIndex = um:ReadShort()
+	local var, value = um:ReadString(), um:ReadString()
+	RetrievePlayerVar(entIndex, var, value, 0)
+end
+usermessage.Hook("DarkRP_PlayerVar", doRetrieve)
 
 local function InitializeDarkRPVars(len)
 	local vars = net.ReadTable()
@@ -598,8 +615,6 @@ end
 net.Receive("DarkRP_InitializeVars", InitializeDarkRPVars)
 
 function GM:InitPostEntity()
-	LoadModules()
-
 	RunConsoleCommand("_sendDarkRPvars")
 	timer.Create("DarkRPCheckifitcamethrough", 15, 0, function()
 		for k,v in pairs(player.GetAll()) do
@@ -610,6 +625,20 @@ function GM:InitPostEntity()
 		end
 	end)
 end
+
+function GM:TeamChanged(before, after)
+	self:RemoveHelpCategory(0)
+	if RPExtraTeams[after] and RPExtraTeams[after].help then
+		self:AddHelpCategory(0, RPExtraTeams[after].name .. " help")
+		self:AddHelpLabels(0, RPExtraTeams[after].help)
+	end
+end
+
+local function OnChangedTeam(um)
+	hook.Call("TeamChanged", GAMEMODE, um:ReadShort(), um:ReadShort())
+end
+usermessage.Hook("OnChangedTeam", OnChangedTeam)
+
 
 -- Please only ADD to the credits
 -- Removing people from the credits will make at least one person very angry.
@@ -649,7 +678,7 @@ FAdmin.StartHooks["DarkRP"] = function()
 		function(ply) local t = LocalPlayer():Team() return t == TEAM_POLICE or t == TEAM_MAYOR or t == TEAM_CHIEF end,
 		function(ply, button)
 			Derma_StringRequest("Warrant reason", "Enter the reason for the warrant", "", function(Reason)
-				LocalPlayer():ConCommand("say /warrant ".. ply:UserID().." ".. Reason)
+				LocalPlayer():ConCommand("darkrp /warrant \"".. ply:SteamID().."\" ".. Reason)
 			end)
 		end)
 
@@ -663,10 +692,10 @@ FAdmin.StartHooks["DarkRP"] = function()
 		function(ply, button)
 			if not ply.DarkRPVars.wanted  then
 				Derma_StringRequest("wanted reason", "Enter the reason to arrest this player", "", function(Reason)
-					LocalPlayer():ConCommand("say /wanted ".. ply:UserID().." ".. Reason)
+					LocalPlayer():ConCommand("darkrp /wanted \"".. ply:SteamID().."\" ".. Reason)
 				end)
 			else
-				LocalPlayer():ConCommand("say /unwanted ".. ply:UserID())
+				LocalPlayer():ConCommand("darkrp /unwanted \"".. ply:UserID() .. "\"")
 			end
 		end)
 

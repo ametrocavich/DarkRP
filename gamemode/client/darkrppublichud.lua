@@ -1,7 +1,4 @@
-﻿//DarkRP Public HUD
-//Version 2.0
-//Made by [IЯAF]Alberto
-
+﻿
 surface.CreateFont( "DarkRPPublicHUD1", {
 font = "Coolvetica",
 size = 25,
@@ -76,7 +73,7 @@ local function darkrphud()
 --Maybe if you want you can use the DarkRP HUD values, or they can be useless.
 local enabletopmessage = false --Enable(true)or disable(false) the message at the top right of the screen. Disabled by default.
 
-local topmessage = "insert you desired text here" --A message at the top right of the screen, to indicate the server/clan name or the server/clan webpage. Whatever you want.
+local topmessage = "Evolution Servers DarkRP" --A message at the top right of the screen, to indicate the server/clan name or the server/clan webpage. Whatever you want.
 local topmsgbgcolor = Color(0,50,255,255)--Top message background color
 local topmsgcolor = Color(255,255,255,255)--Top message text color
 
